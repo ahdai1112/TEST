@@ -30,9 +30,9 @@ pose =rigid3d(Rc_w' ,tc_cw');
 T = [Rc_w, tc_cw; 0, 0, 0,1];
 
 %% 設定figure
-f = figure("Position",[61,81,1639,874]);
+f = figure("Position",[1,41,1920,962]);
 ax1 = axes("Parent",f,"Position", ...
-    [0.054037055888621,0.084932230241155,0.44091191191838,0.806029994971516],"NextPlot","add");
+    [0.064453722555288,0.464350109659035,0.409982886904138,0.479626668568191],"NextPlot","add");
 axis equal;
 box on;
 title(ax1,'Virtual Chessboard Projection',"FontSize",15);
@@ -44,7 +44,7 @@ set(gca,'FontSize',15);
 grid on;
 view(1.560541489891217e+02,32.879971831323658); 
 
-ax2 = axes("Parent",f,"Position",[0.550335570469799,0.206176925391137,0.427089688834655,0.595882571176369],"NextPlot","add");
+ax2 = axes("Parent",f,"Position",[0.142002237136465,0.078318297532509,0.249664429530201,0.291744072529861],"NextPlot","add");
 xlabel(ax2,'u axes');
 ylabel(ax2,'v axes');
 set(gca,"YDir",'reverse'); %像素座標的v方向朝下
@@ -54,6 +54,29 @@ box on;
 grid on;
 grid minor;
 title(ax2,'Image','FontSize',15);
+
+ax3 = axes("Parent",f,"Position",[0.620127237136465,0.464656964656966,0.253310262863535,0.478170478170478],"NextPlot","add");
+axis equal;
+box on;
+title(ax3,'Virtual Chessboard Reprojection',"FontSize",15);
+xlabel(ax3,'x_{cm}','FontSize',15);
+ylabel(ax3,'y_{cm}','FontSize',15);
+zlabel(ax3,'z_{cm}','FontSize',15);
+axis([-15 20 -15 20 0 25]);
+set(gca,'FontSize',15);
+grid on;
+view(1.560541489891217e+02,32.879971831323658); 
+
+ax4 = axes("Parent",f,"Position",[0.620127237136465,0.08137237279352,0.249664429530201,0.291744072529861],"NextPlot","add");
+xlabel(ax4,'u axes');
+ylabel(ax4,'v axes');
+set(gca,"YDir",'reverse'); %像素座標的v方向朝下
+axis([0 640 0 480]);
+set(gca,'FontSize',15);
+box on;
+grid on;
+grid minor;
+title(ax4,'Rounded Image','FontSize',15);
 
 %% 棋盤格設定
 
@@ -138,8 +161,18 @@ txt2 = text(ax1,0,-12,20.5,['t_{x} : ',num2str(tc_cw(1)),'  t_{y} : ',num2str(tc
 
 %% 初始化投影平面
 intersection_plane = patch(ax1,'Vertices',zeros(4,3),'Faces',[1,2,3,4],'FaceColor','yellow','FaceAlpha', 0.2);
+
+%% 初始化像素平面
 chessboard_pixel = patch(ax2,'Vertices', zeros(4,2), 'Faces', faces, 'FaceVertexCData', colors, 'FaceColor', 'flat');
 chessboard_pixel_point = plot(ax2,0,0,'r.','MarkerSize',8);
+
+%% 初始化從像素點投影回來的世界座標點以及棋盤
+worldPoint_reproj = plot3(ax3,0,0,0,'r.','MarkerSize',8);
+chessboard_reprojection_world = patch(ax3,'Vertices', zeros(4,2), 'Faces', faces, 'FaceVertexCData', colors, 'FaceColor', 'flat');
+
+%% 初始化整數化的像素平面
+chessboard_pixel_int = patch(ax4,'Vertices', zeros(4,2), 'Faces', faces, 'FaceVertexCData', colors, 'FaceColor', 'flat');
+chessboard_pixel_point_int = plot(ax4,0,0,'r.','MarkerSize',8);
 
 %% 動畫錄製
 % open the videowriter
@@ -190,7 +223,26 @@ for i = 0:0.1:60
     point_pixel_homo = K*point3D_camera(1:3,:);
 
     % 去除深度的值，取u和v的值
-    point_pixel = round(point_pixel_homo(1:2,:),0)./round(point3D_camera(3,:),0);
+    point_pixel = point_pixel_homo(1:2,:)./point3D_camera(3,:);
+
+    % 使用round，使像素點的值為整數
+    point_pixel_round = round(point_pixel,0);
+
+    % 逆求世界點需要的參數
+    inv_K = [1/focalLengthX, 0 ,-principalPoint(1)/focalLengthX;
+             0, 1/focalLengthY, -principalPoint(2)/focalLengthY;
+             0, 0, 1];
+
+    inv_T = inv(T);
+
+    % 將rounded的像素點先左乘內參數的逆矩陣，轉換至影像座標
+    point_image_reproj = inv_K*[point_pixel_round;ones(1,length(vertices))];
+
+    % 給予深度，轉回相機座標系
+    point_camera_reproj = point3D_camera(3,:).*point_image_reproj;
+
+    % 左乘transformation的逆矩陣
+    point_world_reproj = inv_T*[point_camera_reproj;ones(1,length(vertices))];
     
     %像素平面的四點邊界
     leftTop = [0, 0];
@@ -270,11 +322,23 @@ for i = 0:0.1:60
     txt1.String = ['Roll(deg) : ',num2str(roll),' Pitch(deg) : ',num2str(pitch),' Yaw(deg) : ',num2str(yaw)];
     txt2.String = ['t_{x} : ',num2str(updateTranslation(1)),'  t_{y} : ',num2str(updateTranslation(2)),'  t_{z} : ',num2str(updateTranslation(3))];
 
-    % 繪製世界點於像素座標上表示的點
+    % 更新世界點於像素座標上表示的點
     chessboard_pixel.Vertices = point_pixel';
     chessboard_pixel_point.XData = point_pixel(1,:);
     chessboard_pixel_point.YData = point_pixel(2,:);
+    
+
+    % 更新投影回世界座標的座標點以及棋盤格
+    worldPoint_reproj.XData = point_world_reproj(1,:);
+    worldPoint_reproj.YData = point_world_reproj(2,:);
+    worldPoint_reproj.ZData = point_world_reproj(3,:);
+    chessboard_reprojection_world.Vertices = point_world_reproj(1:3,:)';
    
+    % 更新整數化的像素座標棋盤
+    chessboard_pixel_int.Vertices = point_pixel_round';
+    chessboard_pixel_point_int.XData = point_pixel_round(1,:);
+    chessboard_pixel_point_int.YData = point_pixel_round(2,:);
+    
     drawnow
 
     % frame = getframe(gcf);
